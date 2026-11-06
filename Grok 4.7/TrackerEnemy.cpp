@@ -41,6 +41,92 @@ namespace
 	{
 		return World ? World->GetSubsystem<USquadCoordinatorSubsystem>() : nullptr;
 	}
+
+	static void ClearTrackerPerceptionCaches(
+		TWeakObjectPtr<UAIPerceptionComponent>& Perception,
+		TWeakObjectPtr<UPawnSensingComponent>& PawnSensing,
+		TArray<TWeakObjectPtr<AActor>>& VisiblePlayers,
+		TArray<TWeakObjectPtr<AActor>>& PingedVisiblePlayers,
+		TWeakObjectPtr<UModularSuspicionComponent>& Suspicion)
+	{
+		Perception.Reset();
+		PawnSensing.Reset();
+		VisiblePlayers.Reset();
+		PingedVisiblePlayers.Reset();
+		Suspicion.Reset();
+	}
+
+	struct FControllerSenseComponents
+	{
+		UAIPerceptionComponent* Perception = nullptr;
+		UPawnSensingComponent* PawnSensing = nullptr;
+	};
+
+	static FControllerSenseComponents FindControllerSenseComponents(AController* Controller)
+	{
+		FControllerSenseComponents Components;
+		Components.Perception = Controller->FindComponentByClass<UAIPerceptionComponent>();
+		Components.PawnSensing = Controller->FindComponentByClass<UPawnSensingComponent>();
+		return Components;
+	}
+
+	static bool TrackSightedPlayer(
+		AActor* Actor,
+		bool bWasSuccessfullySensed,
+		TArray<TWeakObjectPtr<AActor>>& VisiblePlayers,
+		TArray<TWeakObjectPtr<AActor>>& PingedVisiblePlayers)
+	{
+		APawn* Player = Cast<APawn>(Actor);
+		if (!IsPlayerControlledPawn(Player))
+			return false;
+		if (!bWasSuccessfullySensed)
+		{
+			VisiblePlayers.Remove(Actor);
+			PingedVisiblePlayers.Remove(Actor);
+			return false;
+		}
+		VisiblePlayers.Add(Actor);
+		return true;
+	}
+
+	static bool IsInvestigationHearingStimulus(const FAIStimulus& Stimulus)
+	{
+		// Squad identification shouts are not new investigation leads.
+		return Stimulus.Type == UAISense::GetSenseID<UAISense_Hearing>()
+			&& Stimulus.WasSuccessfullySensed()
+			&& Stimulus.Tag != TEXT("TargetIdentifiedEnemyShout");
+	}
+
+	static bool IsNoiseLeadSuppressed(
+		const UWorld* World,
+		const AActor* Self,
+		const AActor* Source,
+		const TArray<TWeakObjectPtr<AActor>>& VisiblePlayers,
+		double LastNoisePingTime,
+		float NoisePingCooldown,
+		double& OutNow)
+	{
+		if (!World || Source == Self || (Source && Source->IsA<AABaseEnemy>()))
+			return true;
+		if (HasAnyValidPlayer(VisiblePlayers))
+			return true;
+		OutNow = World->GetTimeSeconds();
+		return OutNow - LastNoisePingTime < FMath::Max(0.0f, NoisePingCooldown);
+	}
+
+	static USquadCoordinatorSubsystem* GetIdentificationCoordinator(const AActor* Player, const UWorld* World)
+	{
+		const APawn* PlayerPawn = Cast<APawn>(Player);
+		if (!IsPlayerControlledPawn(PlayerPawn))
+			return nullptr;
+		return GetSquadCoordinator(World);
+	}
+
+	static void ReleaseTrackerFromSquad(ATrackerEnemy* Enemy, const UWorld* World)
+	{
+		if (USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(World))
+			Coordinator->ReleaseTracker(Enemy);
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -71,11 +157,7 @@ void ATrackerEnemy::UnbindTrackerPerception()
 		TrackerSuspicion->OnSuspicionColorChanged.RemoveDynamic(this, &ATrackerEnemy::OnTrackerSuspicionChanged);
 	if (TrackerSuspicion.IsValid())
 		TrackerSuspicion->OnTargetIdentifiedEvent.RemoveDynamic(this, &ATrackerEnemy::OnTrackerPlayerIdentified);
-	TrackerPerception.Reset();
-	TrackerPawnSensing.Reset();
-	VisiblePlayers.Reset();
-	PingedVisiblePlayers.Reset();
-	TrackerSuspicion.Reset();
+	ClearTrackerPerceptionCaches(TrackerPerception, TrackerPawnSensing, VisiblePlayers, PingedVisiblePlayers, TrackerSuspicion);
 }
 
 void ATrackerEnemy::BindTrackerPerception()
@@ -88,8 +170,9 @@ void ATrackerEnemy::BindTrackerPerception()
 		TrackerSuspicion->OnSuspicionColorChanged.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerSuspicionChanged);
 	if (TrackerSuspicion.IsValid())
 		TrackerSuspicion->OnTargetIdentifiedEvent.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPlayerIdentified);
-	TrackerPerception = GetController()->FindComponentByClass<UAIPerceptionComponent>();
-	TrackerPawnSensing = GetController()->FindComponentByClass<UPawnSensingComponent>();
+	const FControllerSenseComponents SenseComponents = FindControllerSenseComponents(GetController());
+	TrackerPerception = SenseComponents.Perception;
+	TrackerPawnSensing = SenseComponents.PawnSensing;
 	if (TrackerPerception.IsValid())
 	{
 		TrackerPerception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPerceptionUpdated);
@@ -106,24 +189,12 @@ void ATrackerEnemy::OnTrackerPerceptionUpdated(AActor* Actor, FAIStimulus Stimul
 {
 	if (Stimulus.Type == UAISense::GetSenseID<UAISense_Sight>())
 	{
-		APawn* Player = Cast<APawn>(Actor);
-		if (!IsPlayerControlledPawn(Player))
-			return;
-		if (!Stimulus.WasSuccessfullySensed())
-		{
-			VisiblePlayers.Remove(Actor);
-			PingedVisiblePlayers.Remove(Actor);
-			return;
-		}
-		VisiblePlayers.Add(Actor);
-		TryPlayerSightLead(Actor, Stimulus.StimulusLocation);
+		if (TrackSightedPlayer(Actor, Stimulus.WasSuccessfullySensed(), VisiblePlayers, PingedVisiblePlayers))
+			TryPlayerSightLead(Actor, Stimulus.StimulusLocation);
+		return;
 	}
-	else if (Stimulus.Type == UAISense::GetSenseID<UAISense_Hearing>() && Stimulus.WasSuccessfullySensed())
-	{
-		// Squad identification shouts are not new investigation leads.
-		if (Stimulus.Tag != TEXT("TargetIdentifiedEnemyShout"))
-			HandleNoiseLead(Actor, Stimulus.StimulusLocation);
-	}
+	if (IsInvestigationHearingStimulus(Stimulus))
+		HandleNoiseLead(Actor, Stimulus.StimulusLocation);
 }
 
 bool ATrackerEnemy::IsSuspicious() const
@@ -152,12 +223,8 @@ void ATrackerEnemy::OnTrackerSuspicionChanged(ESuspicionColorStatus Color)
 
 void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 {
-	if (!GetWorld() || Source == this || (Source && Source->IsA<AABaseEnemy>()))
-		return;
-	if (HasAnyValidPlayer(VisiblePlayers))
-		return;
-	const double Now = GetWorld()->GetTimeSeconds();
-	if (Now - LastNoisePingTime < FMath::Max(0.0f, NoisePingCooldown))
+	double Now = 0.0;
+	if (IsNoiseLeadSuppressed(GetWorld(), this, Source, VisiblePlayers, LastNoisePingTime, NoisePingCooldown, Now))
 		return;
 	if (PingTarget(Location))
 		LastNoisePingTime = Now;
@@ -165,10 +232,7 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 
 void ATrackerEnemy::OnTrackerPlayerIdentified(AActor* Player)
 {
-	const APawn* PlayerPawn = Cast<APawn>(Player);
-	if (!IsPlayerControlledPawn(PlayerPawn) || !GetWorld())
-		return;
-	USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>();
+	USquadCoordinatorSubsystem* Coordinator = GetIdentificationCoordinator(Player, GetWorld());
 	if (!Coordinator)
 		return;
 	if (!Coordinator->ShareTrackerIdentification(this, Player) && PingTarget(Player->GetActorLocation()))
@@ -192,9 +256,6 @@ bool ATrackerEnemy::PingTarget(FVector SearchLocation)
 void ATrackerEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindTrackerPerception();
-	if (USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(GetWorld()))
-	{
-		Coordinator->ReleaseTracker(this);
-	}
+	ReleaseTrackerFromSquad(this, GetWorld());
 	Super::EndPlay(EndPlayReason);
 }
