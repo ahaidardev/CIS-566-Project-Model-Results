@@ -1,0 +1,22 @@
+You are refactoring C++ code. Only look at and edit these four files:
+
+- AliCharacter.cpp
+- aBaseEnemy.cpp
+- InventoryComponent.cpp
+- TrackerEnemy.cpp
+
+Do not open, read, or modify any other files in the project or other folders other than {FOLDER NAME}.
+Task: Find methods in these files that are long or do several separate tasks, and apply the Extract Method refactoring to them.
+
+Requirements:
+- Do not change the external behavior of the code.
+- Only perform Extract Method refactorings. Do not rename existing methods, variables, or classes, and do not make unrelated changes.
+- Because you may not edit any header files, put each extracted method in the same .cpp file as a static helper function inside an anonymous namespace, passing in any values it needs as parameters.
+- Do not add, remove, or change any Unreal macros (UCLASS, UPROPERTY, UFUNCTION, GENERATED_BODY).
+- The code must still compile.
+- If a file has no reasonable Extract Method opportunity, say so and leave it unchanged.
+
+When you are done, report for each file:
+1. Which method you refactored and why.
+2. Each extracted helper: its name, the original line range it came from, and what it does.
+3. Any file you left unchanged and why.
