@@ -7,6 +7,32 @@
 #include "Perception/AISense_Hearing.h"
 #include "Perception/PawnSensingComponent.h"
 
+namespace
+{
+	static TArray<AActor*> GetCurrentlySeenActors(UAIPerceptionComponent* Perception)
+	{
+		TArray<AActor*> SeenActors;
+		Perception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
+		return SeenActors;
+	}
+
+	static FAIStimulus MakeSightStimulus(const AActor* Actor, const FVector& ReceiverLocation)
+	{
+		return FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), ReceiverLocation);
+	}
+
+	template <typename ContainerType>
+	static bool HasAnyValidPlayer(const ContainerType& Players)
+	{
+		for (const TWeakObjectPtr<AActor>& Player : Players)
+		{
+			if (Player.IsValid())
+				return true;
+		}
+		return false;
+	}
+}
+
 void ATrackerEnemy::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -57,12 +83,9 @@ void ATrackerEnemy::BindTrackerPerception()
 	if (TrackerPerception.IsValid())
 	{
 		TrackerPerception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPerceptionUpdated);
-		TArray<AActor*> SeenActors;
-		TrackerPerception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
-		for (AActor* Actor : SeenActors)
+		for (AActor* Actor : GetCurrentlySeenActors(TrackerPerception.Get()))
 		{
-			OnTrackerPerceptionUpdated(
-				Actor, FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), GetActorLocation()));
+			OnTrackerPerceptionUpdated(Actor, MakeSightStimulus(Actor, GetActorLocation()));
 		}
 	}
 	if (TrackerPawnSensing.IsValid())
@@ -121,12 +144,9 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 {
 	if (!GetWorld() || Source == this || (Source && Source->IsA<AABaseEnemy>()))
 		return;
-	for (const TWeakObjectPtr<AActor>& Player : VisiblePlayers)
-	{
-		if (Player.IsValid())
-			return;
-	}
-	const double Now = GetWorld()->GetTimeSeconds();
+	if (HasAnyValidPlayer(VisiblePlayers))
+		return;
+	const double Now
 	if (Now - LastNoisePingTime < FMath::Max(0.0f, NoisePingCooldown))
 		return;
 	if (PingTarget(Location))
