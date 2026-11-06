@@ -1,4 +1,7 @@
-# Extract Method Refactoring Report
+
+# Refactoring Report — Iteration 1
+
+## Extract Method Refactoring Report
 
 Extract Method was applied only in `TrackerEnemy.cpp`. The other three files are unchanged. The editor reported no errors in `TrackerEnemy.cpp`; a full project build was not run.
 
@@ -23,3 +26,24 @@ Behavior is the same: the order of calls, the early returns and the values passe
 
 ## Unchanged files
 - **`AliCharacter.cpp`**, **`ABaseEnemy.cpp`** and **`InventoryComponent.cpp`**: each one only has `#include` lines that pull in `.inl` files. None of them contain method bodies, so there was nothing to extract. The actual method code is in those `.inl` files, which were off-limits.
+
+---
+
+# Refactoring Report — Iteration 2
+
+I made one Extract Method change, in `TrackerEnemy.cpp`, and left the other three files unchanged. I didn't build it.
+
+**`TrackerEnemy.cpp` already doesn't compile because of an existing error, which I didn't fix.** `HandleNoiseLead` contains `const double Now` with no value assigned (line 149 in the original file, about 154 now). It probably should read `const double Now = GetWorld()->GetTimeSeconds();`, but I didn't change it because that isn't an Extract Method refactoring.
+
+## TrackerEnemy.cpp — refactored
+
+1. **Methods changed:** `OnTrackerPerceptionUpdated` and `OnTrackerPlayerIdentified`. Both had the same multi-part check for "is this a pawn controlled by a player". Pulling it into one helper removes the duplicate and makes each method easier to read.
+2. **New helper:** `IsPlayerControlledPawn(const APawn* Pawn)`, a static function in the existing anonymous namespace.
+   - **Came from:** original line 100 (`!Player || !Player->GetController() || !Player->GetController()->IsPlayerController()`) and lines 159–160 (the same check on `PlayerPawn`, followed by `|| !GetWorld()`).
+   - **What it does:** returns true only if the pawn isn't null, has a controller, and that controller belongs to a player. Each call site now uses `!IsPlayerControlledPawn(...)`, so behavior is the same. The `!GetWorld()` check stays where it was in `OnTrackerPlayerIdentified`.
+3. **Other methods in this file:** I left these alone because they're already short or already use helpers in the anonymous namespace (`GetCurrentlySeenActors`, `MakeSightStimulus`, `HasAnyValidPlayer`). `BindTrackerPerception` and `UnbindTrackerPerception` mostly bind and unbind member event handlers. Moving that into free functions would mean taking member pointers to handlers that may be private, which could break the build without a header change.
+
+## AliCharacter.cpp, ABaseEnemy.cpp, InventoryComponent.cpp — unchanged
+
+These files contain only `#include` lines. All the method code is in `.inl` files under `AliCharacter/`, `ABaseEnemy/` and `InventoryComponent/`. The task said not to open or edit any other files, so there was nothing to refactor here. Refactoring these classes would require permission to edit those `.inl` files.
+

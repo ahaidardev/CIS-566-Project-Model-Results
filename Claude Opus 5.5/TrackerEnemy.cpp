@@ -31,6 +31,11 @@ namespace
 		}
 		return false;
 	}
+
+	static bool IsPlayerControlledPawn(const APawn* Pawn)
+	{
+		return Pawn && Pawn->GetController() && Pawn->GetController()->IsPlayerController();
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -97,7 +102,7 @@ void ATrackerEnemy::OnTrackerPerceptionUpdated(AActor* Actor, FAIStimulus Stimul
 	if (Stimulus.Type == UAISense::GetSenseID<UAISense_Sight>())
 	{
 		APawn* Player = Cast<APawn>(Actor);
-		if (!Player || !Player->GetController() || !Player->GetController()->IsPlayerController())
+		if (!IsPlayerControlledPawn(Player))
 			return;
 		if (!Stimulus.WasSuccessfullySensed())
 		{
@@ -156,8 +161,7 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 void ATrackerEnemy::OnTrackerPlayerIdentified(AActor* Player)
 {
 	const APawn* PlayerPawn = Cast<APawn>(Player);
-	if (!PlayerPawn || !PlayerPawn->GetController() || !PlayerPawn->GetController()->IsPlayerController() ||
-		!GetWorld())
+	if (!IsPlayerControlledPawn(PlayerPawn) || !GetWorld())
 		return;
 	USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>();
 	if (!Coordinator)
