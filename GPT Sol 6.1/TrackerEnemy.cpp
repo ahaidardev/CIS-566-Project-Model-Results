@@ -32,6 +32,24 @@ namespace
 		}
 		return false;
 	}
+
+	template <typename TVisiblePlayerCollection, typename TPingedPlayerCollection, typename TSightLeadCallback>
+	static void HandlePlayerSightStimulus(AActor* Actor, const FAIStimulus& Stimulus,
+		TVisiblePlayerCollection& VisiblePlayers, TPingedPlayerCollection& PingedVisiblePlayers,
+		TSightLeadCallback TryPlayerSightLead)
+	{
+		APawn* Player = Cast<APawn>(Actor);
+		if (!Player || !Player->GetController() || !Player->GetController()->IsPlayerController())
+			return;
+		if (!Stimulus.WasSuccessfullySensed())
+		{
+			VisiblePlayers.Remove(Actor);
+			PingedVisiblePlayers.Remove(Actor);
+			return;
+		}
+		VisiblePlayers.Add(Actor);
+		TryPlayerSightLead(Actor, Stimulus.StimulusLocation);
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -97,17 +115,11 @@ void ATrackerEnemy::OnTrackerPerceptionUpdated(AActor* Actor, FAIStimulus Stimul
 {
 	if (Stimulus.Type == UAISense::GetSenseID<UAISense_Sight>())
 	{
-		APawn* Player = Cast<APawn>(Actor);
-		if (!Player || !Player->GetController() || !Player->GetController()->IsPlayerController())
-			return;
-		if (!Stimulus.WasSuccessfullySensed())
+		HandlePlayerSightStimulus(Actor, Stimulus, VisiblePlayers, PingedVisiblePlayers,
+			[this](AActor* Player, const FVector& Location)
 		{
-			VisiblePlayers.Remove(Actor);
-			PingedVisiblePlayers.Remove(Actor);
-			return;
-		}
-		VisiblePlayers.Add(Actor);
-		TryPlayerSightLead(Actor, Stimulus.StimulusLocation);
+			TryPlayerSightLead(Player, Location);
+		});
 	}
 	else if (Stimulus.Type == UAISense::GetSenseID<UAISense_Hearing>() && Stimulus.WasSuccessfullySensed())
 	{
