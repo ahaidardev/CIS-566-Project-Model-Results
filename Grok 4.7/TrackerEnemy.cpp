@@ -127,6 +127,36 @@ namespace
 		if (USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(World))
 			Coordinator->ReleaseTracker(Enemy);
 	}
+
+	static void StoreControllerSenseComponents(
+		AController* Controller,
+		TWeakObjectPtr<UAIPerceptionComponent>& Perception,
+		TWeakObjectPtr<UPawnSensingComponent>& PawnSensing)
+	{
+		const FControllerSenseComponents SenseComponents = FindControllerSenseComponents(Controller);
+		Perception = SenseComponents.Perception;
+		PawnSensing = SenseComponents.PawnSensing;
+	}
+
+	template <typename ReplayFunc>
+	static void ReplayCurrentlySeenActors(UAIPerceptionComponent* Perception, const FVector& ReceiverLocation, ReplayFunc&& Replay)
+	{
+		for (AActor* Actor : GetCurrentlySeenActors(Perception))
+			Replay(Actor, MakeSightStimulus(Actor, ReceiverLocation));
+	}
+
+	template <typename PingFunc>
+	static void ShareIdentificationWithPingFallback(
+		USquadCoordinatorSubsystem* Coordinator,
+		ATrackerEnemy* Enemy,
+		AActor* Player,
+		PingFunc&& Ping)
+	{
+		if (!Coordinator->ShareTrackerIdentification(Enemy, Player) && Ping())
+		{
+			Coordinator->ShareTrackerIdentification(Enemy, Player);
+		}
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -170,16 +200,14 @@ void ATrackerEnemy::BindTrackerPerception()
 		TrackerSuspicion->OnSuspicionColorChanged.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerSuspicionChanged);
 	if (TrackerSuspicion.IsValid())
 		TrackerSuspicion->OnTargetIdentifiedEvent.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPlayerIdentified);
-	const FControllerSenseComponents SenseComponents = FindControllerSenseComponents(GetController());
-	TrackerPerception = SenseComponents.Perception;
-	TrackerPawnSensing = SenseComponents.PawnSensing;
+	StoreControllerSenseComponents(GetController(), TrackerPerception, TrackerPawnSensing);
 	if (TrackerPerception.IsValid())
 	{
 		TrackerPerception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPerceptionUpdated);
-		for (AActor* Actor : GetCurrentlySeenActors(TrackerPerception.Get()))
+		ReplayCurrentlySeenActors(TrackerPerception.Get(), GetActorLocation(), [this](AActor* Actor, const FAIStimulus& Stimulus)
 		{
-			OnTrackerPerceptionUpdated(Actor, MakeSightStimulus(Actor, GetActorLocation()));
-		}
+			OnTrackerPerceptionUpdated(Actor, Stimulus);
+		});
 	}
 	if (TrackerPawnSensing.IsValid())
 		TrackerPawnSensing->OnHearNoise.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPawnNoise);
@@ -235,10 +263,10 @@ void ATrackerEnemy::OnTrackerPlayerIdentified(AActor* Player)
 	USquadCoordinatorSubsystem* Coordinator = GetIdentificationCoordinator(Player, GetWorld());
 	if (!Coordinator)
 		return;
-	if (!Coordinator->ShareTrackerIdentification(this, Player) && PingTarget(Player->GetActorLocation()))
+	ShareIdentificationWithPingFallback(Coordinator, this, Player, [this, Player]()
 	{
-		Coordinator->ShareTrackerIdentification(this, Player);
-	}
+		return PingTarget(Player->GetActorLocation());
+	});
 }
 
 void ATrackerEnemy::OnTrackerPawnNoise(APawn* Pawn, const FVector& Location, float Volume)

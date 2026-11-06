@@ -43,3 +43,25 @@ The Extract Method refactoring is done. Only `TrackerEnemy.cpp` contained method
 ### Unchanged
 
 `AliCharacter.cpp`, `ABaseEnemy.cpp`, and `InventoryComponent.cpp` only include other translation units. They have no method bodies, so there was no Extract Method opportunity.
+
+# iteration 3
+
+Extract Method was applied only where a `.cpp` method still did more than one job. Behavior, names, and Unreal macros were left as they were.
+
+### TrackerEnemy.cpp
+Refactored `ATrackerEnemy::BindTrackerPerception` and `ATrackerEnemy::OnTrackerPlayerIdentified`. Both still mixed separate steps: discovering sense components, replaying current sight, and the identify-or-ping share sequence.
+
+- `StoreControllerSenseComponents` — original lines 173–175. Copies the controller’s perception and pawn-sensing components into the tracker caches.
+- `ReplayCurrentlySeenActors` — original lines 179–182. Builds a sight stimulus for each actor the perception component already sees and hands it to the caller.
+- `ShareIdentificationWithPingFallback` — original lines 238–241. Shares tracker identification, and if that fails and the ping callback succeeds, shares again. The `&&` short-circuit is unchanged.
+
+`UnbindTrackerPerception` was left as one unbind-then-clear sequence. Its cache clear was already a helper, and the `RemoveDynamic` calls have to stay in the member function.
+
+### AliCharacter.cpp
+Unchanged. The file only includes other translation units. It has no method bodies to extract.
+
+### ABaseEnemy.cpp
+Unchanged. Same situation: includes only, no method bodies.
+
+### InventoryComponent.cpp
+Unchanged. Same situation: includes only, no method bodies.
