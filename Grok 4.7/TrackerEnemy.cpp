@@ -7,6 +7,42 @@
 #include "Perception/AISense_Hearing.h"
 #include "Perception/PawnSensingComponent.h"
 
+namespace
+{
+	static TArray<AActor*> GetCurrentlySeenActors(UAIPerceptionComponent* Perception)
+	{
+		TArray<AActor*> SeenActors;
+		Perception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
+		return SeenActors;
+	}
+
+	static FAIStimulus MakeSightStimulus(const AActor* Actor, const FVector& ReceiverLocation)
+	{
+		return FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), ReceiverLocation);
+	}
+
+	static bool IsPlayerControlledPawn(const APawn* Pawn)
+	{
+		return Pawn && Pawn->GetController() && Pawn->GetController()->IsPlayerController();
+	}
+
+	template <typename ContainerType>
+	static bool HasAnyValidPlayer(const ContainerType& Players)
+	{
+		for (const TWeakObjectPtr<AActor>& Player : Players)
+		{
+			if (Player.IsValid())
+				return true;
+		}
+		return false;
+	}
+
+	static USquadCoordinatorSubsystem* GetSquadCoordinator(const UWorld* World)
+	{
+		return World ? World->GetSubsystem<USquadCoordinatorSubsystem>() : nullptr;
+	}
+}
+
 void ATrackerEnemy::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -57,12 +93,9 @@ void ATrackerEnemy::BindTrackerPerception()
 	if (TrackerPerception.IsValid())
 	{
 		TrackerPerception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPerceptionUpdated);
-		TArray<AActor*> SeenActors;
-		TrackerPerception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
-		for (AActor* Actor : SeenActors)
+		for (AActor* Actor : GetCurrentlySeenActors(TrackerPerception.Get()))
 		{
-			OnTrackerPerceptionUpdated(
-				Actor, FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), GetActorLocation()));
+			OnTrackerPerceptionUpdated(Actor, MakeSightStimulus(Actor, GetActorLocation()));
 		}
 	}
 	if (TrackerPawnSensing.IsValid())
@@ -74,7 +107,7 @@ void ATrackerEnemy::OnTrackerPerceptionUpdated(AActor* Actor, FAIStimulus Stimul
 	if (Stimulus.Type == UAISense::GetSenseID<UAISense_Sight>())
 	{
 		APawn* Player = Cast<APawn>(Actor);
-		if (!Player || !Player->GetController() || !Player->GetController()->IsPlayerController())
+		if (!IsPlayerControlledPawn(Player))
 			return;
 		if (!Stimulus.WasSuccessfullySensed())
 		{
@@ -121,11 +154,8 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 {
 	if (!GetWorld() || Source == this || (Source && Source->IsA<AABaseEnemy>()))
 		return;
-	for (const TWeakObjectPtr<AActor>& Player : VisiblePlayers)
-	{
-		if (Player.IsValid())
-			return;
-	}
+	if (HasAnyValidPlayer(VisiblePlayers))
+		return;
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (Now - LastNoisePingTime < FMath::Max(0.0f, NoisePingCooldown))
 		return;
@@ -136,8 +166,7 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 void ATrackerEnemy::OnTrackerPlayerIdentified(AActor* Player)
 {
 	const APawn* PlayerPawn = Cast<APawn>(Player);
-	if (!PlayerPawn || !PlayerPawn->GetController() || !PlayerPawn->GetController()->IsPlayerController() ||
-		!GetWorld())
+	if (!IsPlayerControlledPawn(PlayerPawn) || !GetWorld())
 		return;
 	USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>();
 	if (!Coordinator)
@@ -156,20 +185,16 @@ void ATrackerEnemy::OnTrackerPawnNoise(APawn* Pawn, const FVector& Location, flo
 
 bool ATrackerEnemy::PingTarget(FVector SearchLocation)
 {
-	USquadCoordinatorSubsystem* Coordinator =
-		GetWorld() ? GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>() : nullptr;
+	USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(GetWorld());
 	return Coordinator && Coordinator->PingTrackerSquad(this, SearchLocation);
 }
 
 void ATrackerEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindTrackerPerception();
-	if (GetWorld())
+	if (USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(GetWorld()))
 	{
-		if (USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>())
-		{
-			Coordinator->ReleaseTracker(this);
-		}
+		Coordinator->ReleaseTracker(this);
 	}
 	Super::EndPlay(EndPlayReason);
 }
