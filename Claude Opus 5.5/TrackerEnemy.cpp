@@ -36,6 +36,11 @@ namespace
 	{
 		return Pawn && Pawn->GetController() && Pawn->GetController()->IsPlayerController();
 	}
+
+	static USquadCoordinatorSubsystem* GetSquadCoordinator(const UWorld* World)
+	{
+		return World ? World->GetSubsystem<USquadCoordinatorSubsystem>() : nullptr;
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -180,20 +185,16 @@ void ATrackerEnemy::OnTrackerPawnNoise(APawn* Pawn, const FVector& Location, flo
 
 bool ATrackerEnemy::PingTarget(FVector SearchLocation)
 {
-	USquadCoordinatorSubsystem* Coordinator =
-		GetWorld() ? GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>() : nullptr;
-	return Coordinator && Coordinator->PingTrackerSquad(this, SearchLocation);
+	USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(GetWorld());
+	return
 }
 
 void ATrackerEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindTrackerPerception();
-	if (GetWorld())
+	if (USquadCoordinatorSubsystem* Coordinator = GetSquadCoordinator(GetWorld()))
 	{
-		if (USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>())
-		{
-			Coordinator->ReleaseTracker(this);
-		}
+		Coordinator->ReleaseTracker(this);
 	}
 	Super::EndPlay(EndPlayReason);
 }

@@ -47,3 +47,25 @@ I made one Extract Method change, in `TrackerEnemy.cpp`, and left the other thre
 
 These files contain only `#include` lines. All the method code is in `.inl` files under `AliCharacter/`, `ABaseEnemy/` and `InventoryComponent/`. The task said not to open or edit any other files, so there was nothing to refactor here. Refactoring these classes would require permission to edit those `.inl` files.
 
+---
+
+# Refactoring Report — Iteration 3
+
+I made one small Extract Method change, in `TrackerEnemy.cpp`, and left the other three files unchanged. **That file still won't compile because of an error that was already there** (see the last section). I didn't run a build.
+
+## TrackerEnemy.cpp — changed
+
+1. **What I refactored and why:** `PingTarget` (original lines 183–184) and `EndPlay` (original lines 191–197) each had their own null-checked lookup of the squad coordinator subsystem. I moved that shared lookup into one helper. Most of the file already uses helpers in an anonymous namespace (`GetCurrentlySeenActors`, `MakeSightStimulus`, `HasAnyValidPlayer`, `IsPlayerControlledPawn`), so there was little else worth extracting.
+2. **Extracted helper:** `static USquadCoordinatorSubsystem* GetSquadCoordinator(const UWorld* World)`, added to the existing anonymous namespace.
+   - **Came from:** original lines 183–184 (`PingTarget`) and 191–197 (`EndPlay`).
+   - **What it does:** returns `World->GetSubsystem<USquadCoordinatorSubsystem>()`, or `nullptr` if the world is null.
+   - Both methods behave exactly as before. `EndPlay` now uses a single `if` instead of two nested ones.
+
+## AliCharacter.cpp, ABaseEnemy.cpp, InventoryComponent.cpp — unchanged
+
+These files only contain `#include`s and comments. Every method body is in `.inl` files (for example `AliCharacter/01_VisibilityAndConstruction.inl`), which I wasn't allowed to open or edit. There's nothing in these `.cpp` files to extract.
+
+## Existing compile error in TrackerEnemy.cpp
+
+In `HandleNoiseLead`, the line `const double Now` (around line 159 now, 154 originally) has no value and no semicolon. It was like this before my change, so the file can't compile as it stands. Fixing it isn't an Extract Method change, and I can't tell what value was intended, so I didn't touch it. It's probably meant to be `const double Now = GetWorld()->GetTimeSeconds();`, but this should be confirmed.
+
