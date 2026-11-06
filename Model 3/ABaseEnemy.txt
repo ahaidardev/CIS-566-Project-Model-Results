@@ -1,0 +1,31 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "WOTDRefactored/Public/Enemy/ABaseEnemy.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Suspicion/GameplayTagManagerComponent.h"
+#include "ContextualAnimSceneActorComponent.h"
+#include "Enemy/EnemyBarkComponent.h"
+#include "Enemy/Components/EnemyCombatRoleComponent.h"
+#include "Enemy/Components/EnemyHidingSearchComponent.h"
+#include "Enemy/Components/EnemyDamageReactionComponent.h"
+#include "Engine/DamageEvents.h"
+#include "AIController.h"
+#include "AITypes.h"
+#include "Enemy/EnemyFocusPriorities.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "AlsCharacterMovementComponent.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
+#include "BehaviorTree/BTTask_EnemySpeedAndGait.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "Settings/AlsMovementSettings.h"
+#include "StealthSystem/StealthGameplayTags.h"
+#include "StealthSystem/SquadSuspicionComponent.h"
+#include "Suspicion/ModularSuspicionComponent.h"
+#include "Utility/AlsGameplayTags.h"
+#include "Components/SkeletalMeshComponent.h"
+
+#include "ABaseEnemy/01_Damage.inl"
+
+#include "ABaseEnemy/02_LifecycleAndMovementSettings.inl"
+
+#include "ABaseEnemy/03_LocomotionAndRotation.inl"
