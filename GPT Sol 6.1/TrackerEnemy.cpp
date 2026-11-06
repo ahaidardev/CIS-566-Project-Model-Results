@@ -50,6 +50,19 @@ namespace
 		VisiblePlayers.Add(Actor);
 		TryPlayerSightLead(Actor, Stimulus.StimulusLocation);
 	}
+
+	template <typename TPingCallback>
+	static void SharePlayerIdentification(UWorld* World, ATrackerEnemy* Tracker, AActor* Player,
+		TPingCallback PingTarget)
+	{
+		USquadCoordinatorSubsystem* Coordinator = World->GetSubsystem<USquadCoordinatorSubsystem>();
+		if (!Coordinator)
+			return;
+		if (!Coordinator->ShareTrackerIdentification(Tracker, Player) && PingTarget(Player->GetActorLocation()))
+		{
+			Coordinator->ShareTrackerIdentification(Tracker, Player);
+		}
+	}
 }
 
 void ATrackerEnemy::PossessedBy(AController* NewController)
@@ -172,13 +185,10 @@ void ATrackerEnemy::OnTrackerPlayerIdentified(AActor* Player)
 	if (!PlayerPawn || !PlayerPawn->GetController() || !PlayerPawn->GetController()->IsPlayerController() ||
 		!GetWorld())
 		return;
-	USquadCoordinatorSubsystem* Coordinator = GetWorld()->GetSubsystem<USquadCoordinatorSubsystem>();
-	if (!Coordinator)
-		return;
-	if (!Coordinator->ShareTrackerIdentification(this, Player) && PingTarget(Player->GetActorLocation()))
+	SharePlayerIdentification(GetWorld(), this, Player, [this](const FVector& Location)
 	{
-		Coordinator->ShareTrackerIdentification(this, Player);
-	}
+		return PingTarget(Location);
+	});
 }
 
 void ATrackerEnemy::OnTrackerPawnNoise(APawn* Pawn, const FVector& Location, float Volume)
