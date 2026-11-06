@@ -7,6 +7,33 @@
 #include "Perception/AISense_Hearing.h"
 #include "Perception/PawnSensingComponent.h"
 
+namespace
+{
+	template <typename TPerceptionCallback>
+	static void ReplayCurrentlyPerceivedActors(UAIPerceptionComponent* TrackerPerception, ATrackerEnemy* Tracker,
+		TPerceptionCallback OnTrackerPerceptionUpdated)
+	{
+		TArray<AActor*> SeenActors;
+		TrackerPerception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
+		for (AActor* Actor : SeenActors)
+		{
+			OnTrackerPerceptionUpdated(
+				Actor, FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), Tracker->GetActorLocation()));
+		}
+	}
+
+	template <typename TPlayerCollection>
+	static bool HasVisiblePlayer(const TPlayerCollection& VisiblePlayers)
+	{
+		for (const TWeakObjectPtr<AActor>& Player : VisiblePlayers)
+		{
+			if (Player.IsValid())
+				return true;
+		}
+		return false;
+	}
+}
+
 void ATrackerEnemy::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -57,13 +84,10 @@ void ATrackerEnemy::BindTrackerPerception()
 	if (TrackerPerception.IsValid())
 	{
 		TrackerPerception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPerceptionUpdated);
-		TArray<AActor*> SeenActors;
-		TrackerPerception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), SeenActors);
-		for (AActor* Actor : SeenActors)
+		ReplayCurrentlyPerceivedActors(TrackerPerception.Get(), this, [this](AActor* Actor, FAIStimulus Stimulus)
 		{
-			OnTrackerPerceptionUpdated(
-				Actor, FAIStimulus(*GetDefault<UAISense_Sight>(), 1.0f, Actor->GetActorLocation(), GetActorLocation()));
-		}
+			OnTrackerPerceptionUpdated(Actor, Stimulus);
+		});
 	}
 	if (TrackerPawnSensing.IsValid())
 		TrackerPawnSensing->OnHearNoise.AddUniqueDynamic(this, &ATrackerEnemy::OnTrackerPawnNoise);
@@ -121,11 +145,8 @@ void ATrackerEnemy::HandleNoiseLead(AActor* Source, const FVector& Location)
 {
 	if (!GetWorld() || Source == this || (Source && Source->IsA<AABaseEnemy>()))
 		return;
-	for (const TWeakObjectPtr<AActor>& Player : VisiblePlayers)
-	{
-		if (Player.IsValid())
-			return;
-	}
+	if (HasVisiblePlayer(VisiblePlayers))
+		return;
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (Now - LastNoisePingTime < FMath::Max(0.0f, NoisePingCooldown))
 		return;
